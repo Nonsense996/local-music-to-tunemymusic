@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本地音乐 → TuneMyMusic 导入工具</title>
+<style>
+  :root {
+    --bg: #201526;
+    --bg-elevated: #2b1c33;
+    --bg-input: #362640;
+    --accent: #e8b23d;
+    --accent-dark: #4a3417;
+    --ok: #6fbf9a;
+    --warn: #e0a23d;
+    --danger: #e2696b;
+    --text: #f5efe8;
+    --text-dim: #baa9c4;
+    --border: rgba(245, 239, 232, 0.14);
+    --radius: 10px;
+    font-size: 16px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
+                 "Segoe UI", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+  }
+
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+
+  header.hero {
+    position: relative;
+    padding: 12px 0 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+
+  .waveform {
+    position: absolute;
+    right: -10px;
+    top: 4px;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 46px;
+    opacity: 0.35;
+    pointer-events: none;
+  }
+  .waveform span {
+    display: block;
+    width: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  h1 {
+    font-size: clamp(1.6rem, 5vw, 2.1rem);
+    font-weight: 800;
+    margin: 0 0 10px;
+    letter-spacing: -0.01em;
+    max-width: 80%;
+  }
+
+  .lede {
+    color: var(--text-dim);
+    font-size: 0.98rem;
+    max-width: 34em;
+    margin: 0 0 4px;
+  }
+
+  .trust-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 0.85rem;
+    color: var(--ok);
+    background: rgba(111, 191, 154, 0.1);
+    border: 1px solid rgba(111, 191, 154, 0.25);
+    border-radius: 999px;
+    padding: 6px 14px;
+  }
+
+  section { margin-bottom: 30px; }
+
+  .section-title {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin: 0 0 12px;
+    font-weight: 600;
+  }
+
+  .picker-box {
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 26px 20px;
+    text-align: center;
+    background: var(--bg-elevated);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: none;
+    border-radius: var(--radius);
+    padding: 14px 26px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    transition: transform 0.08s ease, opacity 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #2a1c08;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 600;
+    padding: 11px 20px;
+    font-size: 0.92rem;
+  }
+
+  .format-note {
+    margin-top: 14px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+
+  .browser-warning {
+    display: none;
+    margin-top: 14px;
+    font-size: 0.82rem;
+    color: var(--danger);
+    background: rgba(226, 105, 107, 0.1);
+    border: 1px solid rgba(226, 105, 107, 0.3);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    text-align: left;
+  }
+
+  #folderInput { display: none; }
+
+  .progress-box {
+    display: none;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+
+  .progress-label {
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .progress-label .fname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+  }
+
+  .progress-track {
+    height: 8px;
+    background: var(--bg-input);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.15s ease;
+  }
+
+  .results { display: none; }
+
+  .summary-line {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+  }
+  .summary-line b { color: var(--text); font-weight: 700; }
+
+  .result-block {
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+    margin-bottom: 6px;
+  }
+
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .result-header .label {
+    font-weight: 700;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-ok { background: var(--ok); }
+  .dot-warn { background: var(--warn); }
+  .dot-danger { background: var(--danger); }
+
+  .result-header .chevron {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    transition: transform 0.15s ease;
+  }
+  .result-block.open .chevron { transform: rotate(90deg); }
+
+  .result-body {
+    display: none;
+    margin-top: 14px;
+    max-height: 340px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .result-block.open .result-body { display: block; }
+
+  table.track-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.86rem;
+  }
+  table.track-table th, table.track-table td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 0;
+  }
+  table.track-table th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-input);
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 0.78rem;
+  }
+  table.track-table tr:last-child td { border-bottom: none; }
+
+  ul.file-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+  ul.file-list li {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    word-break: break-all;
+  }
+  ul.file-list li:last-child { border-bottom: none; }
+
+  .preview-cap-note {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    padding: 10px 14px;
+    font-style: normal;
+  }
+
+  .export-area {
+    margin-top: 26px;
+    padding-top: 22px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .export-hint {
+    width: 100%;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+
+  footer {
+    margin-top: 50px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+  footer a { color: var(--accent); }
+
+  @media (min-width: 640px) {
+    .wrap { padding-top: 56px; }
+    h1 { max-width: 60%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="waveform" id="waveform"></div>
+    <h1>把本地音乐导入 Spotify</h1>
+    <p class="lede">选一个文件夹,自动读取里面所有歌曲的标签,生成 TuneMyMusic 能识别的导入文件。</p>
+    <div class="trust-note">🔒 全程本地处理,音乐文件不会上传到任何服务器</div>
+  </header>
+
+  <section id="pickerSection">
+    <p class="section-title">第一步</p>
+    <div class="picker-box">
+      <button class="btn btn-primary" id="pickFolderBtn">选择音乐文件夹</button>
+      <input type="file" id="folderInput" webkitdirectory multiple>
+      <p class="format-note">支持格式:MP3 / FLAC / M4A / WAV / OGG,会自动扫描所有子文件夹</p>
+      <div class="browser-warning" id="browserWarning">
+        当前浏览器可能不支持"选择整个文件夹",建议使用最新版 Chrome 打开本页面。
+      </div>
+    </div>
+  </section>
+
+  <section id="progressSection" class="progress-box">
+    <div class="progress-label">
+      <span>正在扫描 <span id="progressCount">0 / 0</span></span>
+      <span class="fname" id="progressFile"></span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </section>
+
+  <section id="resultsSection" class="results">
+    <p class="section-title">第二步 · 预览结果</p>
+    <p class="summary-line" id="summaryLine"></p>
+
+    <div class="result-block open" id="blockSuccess">
+      <div class="result-header" data-target="blockSuccess">
+        <span class="label"><span class="dot dot-ok"></span>识别成功的曲目 (<span id="countSuccess">0</span>)</span>
+        <span class="chevron">▸</span>
+      </div>
+      <div class="result-body">
+        <table class="track-table" id="successTable">
+          <thead><tr><th style="width:40%">标题</th><th style="width:32%">艺术家</th><th style="width:28%">专辑</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <p class="preview-cap-note" id="successCapNote" style="display:none;"></p>
+      </div>
+    </div>
+
+    <div class="result-block" id="blockTagsSkipped">
+      <div class="result-header" data-target="blockTagsSkipped">
+        <span class="label"><span class="dot dot-warn"></span>因标签缺失被跳过 (<span id="countTagsSkipped">0</span>)</span>
+        <span class="chevron">▸</span>
+      </div>
+      <div class="result-body">
+        <ul class="file-list" id="tagsSkippedList"></ul>
+      </div>
+    </div>
+
+    <div class="result-block" id="blockParseFailed">
+      <div class="result-header" data-target="blockParseFailed">
+        <span class="label"><span class="dot dot-danger"></span>解析失败的文件 (<span id="countParseFailed">0</span>)</span>
+        <span class="chevron">▸</span>
+      </div>
+      <div class="result-body">
+        <ul class="file-list" id="parseFailedList"></ul>
+      </div>
+    </div>
+
+    <div class="export-area">
+      <p class="export-hint">第三步 · 下载导入文件,上传到 tunemymusic.com</p>
+      <button class="btn btn-primary" id="downloadCsvBtn" style="max-width:220px;">下载 CSV(推荐)</button>
+      <button class="btn btn-outline" id="downloadTxtBtn">下载 TXT</button>
+    </div>
+  </section>
+
+  <footer>
+    工具源码开放在 GitHub 上,标签解析全部在浏览器本地完成,不依赖任何第三方服务。
+  </footer>
+
+</div>
+
+<script>
+// =====================================================================
+// 标签解析核心逻辑(纯 JS,不依赖任何第三方库)
+// =====================================================================
+function readU32BE(bytes, offset) {
+  return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
+}
+function readU32LE(bytes, offset) {
+  return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+}
+function cleanStr(s) {
+  return s.replace(/\u0000+$/, '').replace(/^\uFEFF/, '').trim();
+}
+
+function synchsafe4(bytes, offset) {
+  return ((bytes[offset] & 0x7f) << 21) | ((bytes[offset + 1] & 0x7f) << 14) | ((bytes[offset + 2] & 0x7f) << 7) | (bytes[offset + 3] & 0x7f);
+}
+
+function decodeID3Text(data) {
+  if (data.length === 0) return '';
+  const enc = data[0];
+  let body = data.subarray(1);
+  let str;
+  try {
+    if (enc === 0) {
+      str = new TextDecoder('iso-8859-1').decode(body);
+    } else if (enc === 1) {
+      if (body[0] === 0xff && body[1] === 0xfe) {
+        str = new TextDecoder('utf-16le').decode(body.subarray(2));
+      } else if (body[0] === 0xfe && body[1] === 0xff) {
+        str = new TextDecoder('utf-16be').decode(body.subarray(2));
+      } else {
+        str = new TextDecoder('utf-16le').decode(body);
+      }
+    } else if (enc === 2) {
+      str = new TextDecoder('utf-16be').decode(body);
+    } else {
+      str = new TextDecoder('utf-8').decode(body);
+    }
+  } catch (e) {
+    str = new TextDecoder('utf-8').decode(body);
+  }
+  return cleanStr(str);
+}
+
+function readID3v2(bytes) {
+  if (bytes.length < 10) return null;
+  if (!(bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33)) return null;
+  const verMajor = bytes[3];
+  const flags = bytes[5];
+  const size = synchsafe4(bytes, 6);
+  let offset = 10;
+  const end = Math.min(10 + size, bytes.length);
+  if (flags & 0x40) {
+    const extSize = verMajor === 4 ? synchsafe4(bytes, offset) : readU32BE(bytes, offset);
+    offset += extSize;
+  }
+  const result = {};
+  let iterations = 0;
+  while (offset < end - 10 && iterations < 10000) {
+    iterations++;
+    let frameId, frameSize;
+    if (verMajor >= 3) {
+      frameId = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+      if (frameId.charCodeAt(0) === 0) break;
+      frameSize = verMajor === 4 ? synchsafe4(bytes, offset + 4) : readU32BE(bytes, offset + 4);
+      offset += 10;
+    } else {
+      frameId = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2]);
+      if (frameId.charCodeAt(0) === 0) break;
+      frameSize = (bytes[offset + 3] << 16) | (bytes[offset + 4] << 8) | bytes[offset + 5];
+      offset += 6;
+    }
+    if (frameSize <= 0 || offset + frameSize > bytes.length) break;
+    const frameData = bytes.subarray(offset, offset + frameSize);
+    const map = { TIT2: 'title', TT2: 'title', TPE1: 'artist', TP1: 'artist', TALB: 'album', TAL: 'album' };
+    const key = map[frameId];
+    if (key && !result[key]) {
+      result[key] = decodeID3Text(frameData);
+    }
+    offset += frameSize;
+  }
+  return (result.title || result.artist) ? result : null;
+}
+
+function readID3v1(bytes) {
+  if (bytes.length < 128) return null;
+  const tagStart = bytes.length - 128;
+  if (!(bytes[tagStart] === 0x54 && bytes[tagStart + 1] === 0x41 && bytes[tagStart + 2] === 0x47)) return null;
+  const dec = new TextDecoder('iso-8859-1');
+  const title = cleanStr(dec.decode(bytes.subarray(tagStart + 3, tagStart + 33)));
+  const artist = cleanStr(dec.decode(bytes.subarray(tagStart + 33, tagStart + 63)));
+  const album = cleanStr(dec.decode(bytes.subarray(tagStart + 63, tagStart + 93)));
+  return (title || artist) ? { title, artist, album } : null;
+}
+
+function readMp3Tags(bytes) {
+  return readID3v2(bytes) || readID3v1(bytes);
+}
+
+function parseVorbisComment(data) {
+  let pos = 0;
+  const readLE = () => { const v = readU32LE(data, pos); pos += 4; return v; };
+  if (pos + 4 > data.length) return null;
+  const vendorLen = readLE();
+  pos += vendorLen;
+  if (pos + 4 > data.length) return null;
+  const commentCount = readLE();
+  const result = {};
+  for (let i = 0; i < commentCount; i++) {
+    if (pos + 4 > data.length) break;
+    const len = readLE();
+    if (len < 0 || pos + len > data.length) break;
+    const str = new TextDecoder('utf-8').decode(data.subarray(pos, pos + len));
+    pos += len;
+    const eq = str.indexOf('=');
+    if (eq > 0) {
+      const key = str.substring(0, eq).toUpperCase();
+      const val = str.substring(eq + 1);
+      if (key === 'TITLE' && !result.title) result.title = val;
+      else if (key === 'ARTIST' && !result.artist) result.artist = val;
+      else if (key === 'ALBUM' && !result.album) result.album = val;
+    }
+  }
+  return (result.title || result.artist) ? result : null;
+}
+
+function readFlacTags(bytes) {
+  if (!(bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43)) {
+    throw new Error('not-a-flac-file');
+  }
+  let offset = 4;
+  let iterations = 0;
+  while (offset + 4 <= bytes.length && iterations < 10000) {
+    iterations++;
+    const header = bytes[offset];
+    const isLast = (header & 0x80) !== 0;
+    const blockType = header & 0x7f;
+    const blockSize = (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+    offset += 4;
+    if (blockType === 4) {
+      return parseVorbisComment(bytes.subarray(offset, offset + blockSize));
+    }
+    offset += blockSize;
+    if (isLast) break;
+  }
+  return null;
+}
+
+function readOggTags(bytes) {
+  if (!(bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53)) {
+    throw new Error('not-an-ogg-file');
+  }
+  const sig = [0x03, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73];
+  const searchLimit = Math.min(bytes.length, 262144);
+  for (let i = 0; i < searchLimit - sig.length; i++) {
+    let match = true;
+    for (let j = 0; j < sig.length; j++) {
+      if (bytes[i + j] !== sig[j]) { match = false; break; }
+    }
+    if (match) {
+      const commentData = bytes.subarray(i + sig.length);
+      const result = parseVorbisComment(commentData);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
+function readWavTags(bytes) {
+  if (!(bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46)) {
+    throw new Error('not-a-wav-file');
+  }
+  if (!(bytes[8] === 0x57 && bytes[9] === 0x41 && bytes[10] === 0x56 && bytes[11] === 0x45)) {
+    throw new Error('not-a-wav-file');
+  }
+  let offset = 12;
+  const map = { INAM: 'title', IART: 'artist', IPRD: 'album' };
+  const result = {};
+  while (offset + 8 <= bytes.length) {
+    const chunkId = String.fromCharCode(bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]);
+    const chunkSize = readU32LE(bytes, offset + 4);
+    const dataStart = offset + 8;
+    if (chunkId === 'LIST' && dataStart + 4 <= bytes.length) {
+      const listType = String.fromCharCode(bytes[dataStart], bytes[dataStart + 1], bytes[dataStart + 2], bytes[dataStart + 3]);
+      if (listType === 'INFO') {
+        let p = dataStart + 4;
+        const listEnd = Math.min(dataStart + chunkSize, bytes.length);
+        while (p + 8 <= listEnd) {
+          const subId = String.fromCharCode(bytes[p], bytes[p + 1], bytes[p + 2], bytes[p + 3]);
+          const subSize = readU32LE(bytes, p + 4);
+          const subDataStart = p + 8;
+          const key = map[subId];
+          if (key && subDataStart + subSize <= bytes.length) {
+            const str = cleanStr(new TextDecoder('utf-8').decode(bytes.subarray(subDataStart, subDataStart + subSize)));
+            result[key] = str;
+          }
+          p = subDataStart + subSize + (subSize % 2);
+        }
+      }
+    }
+    offset = dataStart + chunkSize + (chunkSize % 2);
+  }
+  return (result.title || result.artist) ? result : null;
+}
+
+function findBox(bytes, start, end, fourcc) {
+  let offset = start;
+  let iterations = 0;
+  while (offset + 8 <= end && iterations < 10000) {
+    iterations++;
+    let size = readU32BE(bytes, offset);
+    const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    let headerLen = 8;
+    if (size === 1) {
+      if (offset + 16 > end) break;
+      const hi = readU32BE(bytes, offset + 8);
+      const lo = readU32BE(bytes, offset + 12);
+      size = hi * 4294967296 + lo;
+      headerLen = 16;
+    }
+    if (size < headerLen) break;
+    const contentStart = offset + headerLen;
+    const contentEnd = offset + size;
+    if (type === fourcc) {
+      return { start: contentStart, end: Math.min(contentEnd, end) };
+    }
+    offset += size;
+  }
+  return null;
+}
+
+function findBoxPath(bytes, start, end, path) {
+  let curStart = start, curEnd = end;
+  for (const name of path) {
+    const box = findBox(bytes, curStart, curEnd, name);
+    if (!box) return null;
+    curStart = box.start;
+    curEnd = box.end;
+    if (name === 'meta') curStart += 4;
+  }
+  return { start: curStart, end: curEnd };
+}
+
+function readMp4Tags(bytes) {
+  const moov = findBox(bytes, 0, bytes.length, 'moov');
+  if (!moov) {
+    throw new Error('not-a-valid-mp4-file');
+  }
+  const ilst = findBoxPath(bytes, 0, bytes.length, ['moov', 'udta', 'meta', 'ilst']);
+  if (!ilst) return null;
+  const map = { '\u00A9nam': 'title', '\u00A9ART': 'artist', '\u00A9alb': 'album' };
+  const result = {};
+  let offset = ilst.start;
+  const end = ilst.end;
+  let iterations = 0;
+  while (offset + 8 <= end && iterations < 10000) {
+    iterations++;
+    const size = readU32BE(bytes, offset);
+    const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
+    if (size < 8) break;
+    const key = map[type];
+    if (key && !result[key]) {
+      const dataBox = findBox(bytes, offset + 8, offset + size, 'data');
+      if (dataBox && dataBox.start + 8 <= dataBox.end) {
+        const str = cleanStr(new TextDecoder('utf-8').decode(bytes.subarray(dataBox.start + 8, dataBox.end)));
+        result[key] = str;
+      }
+    }
+    offset += size;
+  }
+  return (result.title || result.artist) ? result : null;
+}
+
+const PARSERS = {
+  mp3: readMp3Tags,
+  flac: readFlacTags,
+  m4a: readMp4Tags,
+  wav: readWavTags,
+  ogg: readOggTags,
+};
+
+// =====================================================================
+// UI 逻辑
+// =====================================================================
+const PREVIEW_CAP = 300;
+
+function getExt(filename) {
+  const i = filename.lastIndexOf('.');
+  return i === -1 ? '' : filename.slice(i + 1).toLowerCase();
+}
+function relPath(file) {
+  return file.webkitRelativePath || file.name;
+}
+function el(id) { return document.getElementById(id); }
+
+// 顶部装饰波形
+(function drawWaveform() {
+  const wf = el('waveform');
+  const heights = [14, 26, 18, 38, 22, 44, 16, 30, 20, 36, 12, 28];
+  for (const h of heights) {
+    const bar = document.createElement('span');
+    bar.style.height = h + 'px';
+    wf.appendChild(bar);
+  }
+})();
+
+// 浏览器兼容性检测
+if (!('webkitdirectory' in document.createElement('input'))) {
+  el('browserWarning').style.display = 'block';
+}
+
+el('pickFolderBtn').addEventListener('click', () => {
+  el('folderInput').click();
+});
+
+el('folderInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
+  if (files.length === 0) return;
+  await runScan(files);
+});
+
+// 展开/收起结果分组
+document.querySelectorAll('.result-header').forEach(header => {
+  header.addEventListener('click', () => {
+    const block = el(header.getAttribute('data-target'));
+    block.classList.toggle('open');
+  });
+});
+
+let lastResults = null;
+
+async function runScan(fileList) {
+  el('pickerSection').style.display = 'none';
+  el('resultsSection').style.display = 'none';
+  el('progressSection').style.display = 'block';
+
+  const targetFiles = fileList.filter(f => PARSERS[getExt(f.name)]);
+  const total = targetFiles.length;
+
+  const seen = new Set();
+  const success = [];
+  const skippedTags = [];
+  const skippedParse = [];
+
+  for (let i = 0; i < targetFiles.length; i++) {
+    const file = targetFiles[i];
+    el('progressCount').textContent = `${i + 1} / ${total}`;
+    el('progressFile').textContent = file.name;
+    el('progressFill').style.width = total ? `${((i + 1) / total) * 100}%` : '0%';
+
+    const ext = getExt(file.name);
+    try {
+      const buf = await file.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const tags = PARSERS[ext](bytes);
+      if (tags && tags.title && tags.artist) {
+        const key = tags.artist.trim().toLowerCase() + '|' + tags.title.trim().toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          success.push({ title: tags.title.trim(), artist: tags.artist.trim(), album: (tags.album || '').trim() });
+        }
+      } else {
+        skippedTags.push(relPath(file));
+      }
+    } catch (err) {
+      skippedParse.push(relPath(file));
+    }
+
+    if (i % 15 === 0) {
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+
+  lastResults = { success, skippedTags, skippedParse };
+  renderResults(lastResults);
+
+  el('progressSection').style.display = 'none';
+  el('resultsSection').style.display = 'block';
+  el('pickerSection').style.display = 'block';
+  el('pickFolderBtn').textContent = '重新选择文件夹';
+}
+
+function renderResults(r) {
+  el('summaryLine').innerHTML =
+    `识别到 <b>${r.success.length}</b> 首曲目,` +
+    `<b>${r.skippedTags.length}</b> 个文件因标签缺失跳过,` +
+    `<b>${r.skippedParse.length}</b> 个文件解析失败。`;
+
+  el('countSuccess').textContent = r.success.length;
+  el('countTagsSkipped').textContent = r.skippedTags.length;
+  el('countParseFailed').textContent = r.skippedParse.length;
+
+  const tbody = document.querySelector('#successTable tbody');
+  tbody.innerHTML = '';
+  const shown = r.success.slice(0, PREVIEW_CAP);
+  const frag = document.createDocumentFragment();
+  for (const t of shown) {
+    const tr = document.createElement('tr');
+    [t.title, t.artist, t.album].forEach(v => {
+      const td = document.createElement('td');
+      td.textContent = v || '—';
+      td.title = v || '';
+      tr.appendChild(td);
+    });
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+  const capNote = el('successCapNote');
+  if (r.success.length > PREVIEW_CAP) {
+    capNote.style.display = 'block';
+    capNote.textContent = `仅预览前 ${PREVIEW_CAP} 条,完整的 ${r.success.length} 条会全部包含在导出文件中。`;
+  } else {
+    capNote.style.display = 'none';
+  }
+
+  fillFileList('tagsSkippedList', r.skippedTags);
+  fillFileList('parseFailedList', r.skippedParse);
+
+  el('downloadCsvBtn').disabled = r.success.length === 0;
+  el('downloadTxtBtn').disabled = r.success.length === 0;
+}
+
+function fillFileList(ulId, paths) {
+  const ul = el(ulId);
+  ul.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  const cap = 500;
+  paths.slice(0, cap).forEach(p => {
+    const li = document.createElement('li');
+    li.textContent = p;
+    frag.appendChild(li);
+  });
+  if (paths.length > cap) {
+    const li = document.createElement('li');
+    li.textContent = `… 还有 ${paths.length - cap} 个文件未显示`;
+    frag.appendChild(li);
+  }
+  if (paths.length === 0) {
+    const li = document.createElement('li');
+    li.textContent = '没有文件属于这一类。';
+    frag.appendChild(li);
+  }
+  ul.appendChild(frag);
+}
+
+function escapeCsvField(v) {
+  const s = (v || '').replace(/"/g, '""');
+  if (/[",\n\r]/.test(v || '')) {
+    return `"${s}"`;
+  }
+  return s;
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+el('downloadCsvBtn').addEventListener('click', () => {
+  if (!lastResults) return;
+  const rows = ['Track name,Artist name,Album'];
+  for (const t of lastResults.success) {
+    rows.push([escapeCsvField(t.title), escapeCsvField(t.artist), escapeCsvField(t.album)].join(','));
+  }
+  const csvContent = '\uFEFF' + rows.join('\r\n');
+  downloadBlob(csvContent, 'tunemymusic_import.csv', 'text/csv;charset=utf-8');
+});
+
+el('downloadTxtBtn').addEventListener('click', () => {
+  if (!lastResults) return;
+  const lines = lastResults.success.map(t => `${t.artist} - ${t.title}`);
+  const txtContent = '\uFEFF' + lines.join('\r\n');
+  downloadBlob(txtContent, 'tunemymusic_import.txt', 'text/plain;charset=utf-8');
+});
+</script>
+</body>
+</html>

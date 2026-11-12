@@ -785,6 +785,12 @@ function parseMusicLink(input) {
   m = s.match(/kuwo\.cn\/singer_detail\/(\d+)/i) ||
      s.match(/[?&]artistid=(\d+)/i);
   if (m) return { platform: 'kuwo', type: 'artist', id: m[1] };
+  // 酷我手机端 H5 分享页(m.kuwo.cn/newh5/...):实测歌手页为
+  // artist/artistDetail?id=N;歌单/单曲的 H5 路由已下线(404),
+  // 手机型分享的歌单与单曲落地页同样使用 www.kuwo.cn 两种路径,上面已覆盖
+  m = s.match(/kuwo\.cn\/newh5\/artist\/artistDetail\?id=(\d+)/i) ||
+     s.match(/kuwo\.cn\/newh5\/(?:artist|singer)\/\w+\?id=(\d+)/i);
+  if (m) return { platform: 'kuwo', type: 'artist', id: m[1] };
   // QQ:playlist/ID 或 dissid、songDetail/MID、singer/MID
   m = s.match(/y\.qq\.com\/n\/ryqq\/playlist\/(\d+)/i) ||
      s.match(/y\.qq\.com\/playsquare\/(\d+)/i) ||

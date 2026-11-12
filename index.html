@@ -164,6 +164,22 @@
 
   #folderInput { display: none; }
 
+  .text-input {
+    display: block;
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 13px 16px;
+    margin-bottom: 14px;
+    outline: none;
+  }
+  .text-input:focus { border-color: var(--accent); }
+  .text-input::placeholder { color: var(--text-dim); opacity: 0.7; }
+
   .progress-box {
     display: none;
     background: var(--bg-elevated);
@@ -335,13 +351,23 @@
 
   <header class="hero">
     <div class="waveform" id="waveform"></div>
-    <h1>把本地音乐导入 Spotify</h1>
-    <p class="lede">选一个文件夹,自动读取里面所有歌曲的标签,生成 TuneMyMusic 能识别的导入文件。</p>
+    <h1>把音乐导入 Spotify</h1>
+    <p class="lede">扫描本地音乐文件夹,或粘贴酷我 / QQ音乐的歌单、歌手、单曲链接,生成 TuneMyMusic 能识别的导入文件。</p>
     <div class="trust-note">🔒 全程本地处理,音乐文件不会上传到任何服务器</div>
   </header>
 
+  <section id="linkSection">
+    <p class="section-title">方式一 · 从流媒体链接导入</p>
+    <div class="picker-box">
+      <input type="text" id="linkInput" class="text-input" placeholder="粘贴酷我或QQ音乐链接,如 https://www.kuwo.cn/playlist_detail/2686672431" spellcheck="false">
+      <button class="btn btn-primary" id="importLinkBtn" style="max-width:320px;">导入链接</button>
+      <p class="format-note">支持:酷我歌单 / 歌手页 / 单曲,QQ音乐歌单 / 歌手页 / 单曲(含热榜等榜单)。链接直接在浏览器读取,不走任何服务器。</p>
+      <div class="browser-warning" id="linkError"></div>
+    </div>
+  </section>
+
   <section id="pickerSection">
-    <p class="section-title">第一步</p>
+    <p class="section-title">方式二 · 扫描本地音乐文件夹</p>
     <div class="picker-box">
       <button class="btn btn-primary" id="pickFolderBtn">选择音乐文件夹</button>
       <input type="file" id="folderInput" webkitdirectory multiple>
@@ -366,7 +392,7 @@
 
     <div class="result-block open" id="blockSuccess">
       <div class="result-header" data-target="blockSuccess">
-        <span class="label"><span class="dot dot-ok"></span>识别成功的曲目 (<span id="countSuccess">0</span>)</span>
+        <span class="label"><span class="dot dot-ok"></span>已收集的曲目 (<span id="countSuccess">0</span>)</span>
         <span class="chevron">▸</span>
       </div>
       <div class="result-body">
@@ -402,11 +428,12 @@
       <p class="export-hint">第三步 · 下载导入文件,上传到 tunemymusic.com</p>
       <button class="btn btn-primary" id="downloadCsvBtn" style="max-width:220px;">下载 CSV(推荐)</button>
       <button class="btn btn-outline" id="downloadTxtBtn">下载 TXT</button>
+      <button class="btn btn-outline" id="clearAllBtn">清空结果</button>
     </div>
   </section>
 
   <footer>
-    工具源码开放在 GitHub 上,标签解析全部在浏览器本地完成,不依赖任何第三方服务。
+    工具源码开放在 GitHub 上,标签解析与流媒体链接读取全部在浏览器本地完成,不依赖任何第三方服务。流媒体数据直接从酷我 / QQ音乐的公开接口读取,仅供个人歌单迁移使用。
   </footer>
 
 </div>
@@ -694,6 +721,256 @@ const PARSERS = {
 };
 
 // =====================================================================
+// 流媒体链接导入(酷我 / QQ音乐,JSONP 直连,不经任何服务器)
+// =====================================================================
+function jsonp(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    // 生成随机回调名,避免并发冲突
+    const cbName = '__jsonp_cb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('请求超时,请检查网络后重试'));
+    }, timeoutMs || 20000);
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+    window[cbName] = (data) => {
+      cleanup();
+      resolve(data);
+    };
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('网络请求失败'));
+    };
+    // 不发送 Referer:部分平台接口(QQ aiDissInfo)会拒绝第三方来源页的 Referer,
+    // 而不带 Referer 时可以正常访问(实测)
+    script.referrerPolicy = 'no-referrer';
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + cbName;
+    document.head.appendChild(script);
+  });
+}
+
+// QQ音乐统一接口:GET musicu.fcg?callback=xx&data=<urlencoded json>
+function qqMusicu(module, method, param) {
+  const body = JSON.stringify({
+    comm: { ct: 24, cv: 0 },
+    req_1: { module, method, param }
+  });
+  const url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?data=' +
+    encodeURIComponent(body) + '&format=jsonp';
+  return jsonp(url).then(d => {
+    const r = d && d.req_1;
+    if (!r || r.code !== 0 || !r.data) {
+      throw new Error('QQ音乐接口返回异常(code=' + (r && r.code) + ')');
+    }
+    return r.data;
+  });
+}
+
+// 解析用户粘贴的链接,识别平台与类型
+function parseMusicLink(input) {
+  const s = input.trim();
+  // 容错:裸 ID
+  const num = s.match(/^\d{4,20}$/);
+  // 酷我:playlist_detail/ID、play_detail/MUSIC_ID、singer_detail/ID、mobi 或 app 分享链接
+  let m = s.match(/kuwo\.cn\/playlist_detail\/(\d+)/i) ||
+          s.match(/[?&](?:pid|playlistid)=(\d+)/i);
+  if (m) return { platform: 'kuwo', type: 'playlist', id: m[1] };
+  m = s.match(/kuwo\.cn\/play_detail\/(?:MUSIC_)?(\d+)/i) ||
+     s.match(/[?&](?:rid|mid)=(\d+)/i);
+  if (m) return { platform: 'kuwo', type: 'song', id: m[1] };
+  m = s.match(/kuwo\.cn\/singer_detail\/(\d+)/i) ||
+     s.match(/[?&]artistid=(\d+)/i);
+  if (m) return { platform: 'kuwo', type: 'artist', id: m[1] };
+  // QQ:playlist/ID 或 dissid、songDetail/MID、singer/MID
+  m = s.match(/y\.qq\.com\/n\/ryqq\/playlist\/(\d+)/i) ||
+     s.match(/y\.qq\.com\/playsquare\/(\d+)/i) ||
+     s.match(/[?&]disstid=(\d+)/i);
+  if (m) return { platform: 'qq', type: 'playlist', id: m[1] };
+  m = s.match(/y\.qq\.com\/n\/ryqq\/songDetail\/([0-9A-Za-z]+)/i) ||
+     s.match(/i\.y\.qq\.com[^\s]*[?&]songmid=([0-9A-Za-z]+)/i);
+  if (m) return { platform: 'qq', type: 'song', id: m[1] };
+  m = s.match(/y\.qq\.com\/n\/ryqq\/singer\/([0-9A-Za-z]+)/i) ||
+     s.match(/[?&]singermid=([0-9A-Za-z]+)/i);
+  if (m) return { platform: 'qq', type: 'artist', id: m[1] };
+  if (num) {
+    return { platform: 'unknown', type: 'unknown', id: num[1], hint: '数字 ID,缺少平台信息' };
+  }
+  return null;
+}
+
+const KUWO_PAGE_SIZE = 100;   // 酷我单页上限(实测)
+const QQ_SINGER_PAGE_SIZE = 100; // QQ 歌手单曲单页上限(实测)
+
+// 酷我歌单:分页拉全
+async function fetchKuwoPlaylist(pid, onProgress) {
+  const first = await jsonp('https://wapi.kuwo.cn/api/www/playlist/playListInfo?pid=' + pid +
+    '&pn=1&rn=' + KUWO_PAGE_SIZE);
+  if (first.code !== 200 || !first.data) throw new Error('歌单不存在或已删除');
+  const data = first.data;
+  const total = data.total || 0;
+  const name = data.name || '酷我歌单';
+  let musicList = data.musicList || [];
+  const pages = Math.ceil(total / KUWO_PAGE_SIZE);
+  for (let pn = 2; pn <= pages; pn++) {
+    onProgress && onProgress('正在拉取第 ' + pn + '/' + pages + ' 页…');
+    const next = await jsonp('https://wapi.kuwo.cn/api/www/playlist/playListInfo?pid=' + pid +
+      '&pn=' + pn + '&rn=' + KUWO_PAGE_SIZE);
+    if (next.code !== 200 || !next.data) break;
+    musicList = musicList.concat(next.data.musicList || []);
+  }
+  return {
+    name,
+    tracks: musicList.map(s => ({
+      title: (s.name || '').trim(),
+      artist: (s.artist || '').trim(),
+      album: (s.album || '').trim()
+    }))
+  };
+}
+
+// 酷我歌手页:分页拉全部单曲
+async function fetchKuwoArtist(artistid, onProgress) {
+  const first = await jsonp('https://wapi.kuwo.cn/api/www/artist/artistMusic?artistid=' + artistid +
+    '&pn=1&rn=' + KUWO_PAGE_SIZE);
+  if (first.code !== 200 || !first.data) throw new Error('歌手不存在');
+  const total = first.data.total || 0;
+  let list = first.data.list || [];
+  const pages = Math.ceil(total / KUWO_PAGE_SIZE);
+  for (let pn = 2; pn <= pages; pn++) {
+    onProgress && onProgress('正在拉取第 ' + pn + '/' + pages + ' 页…');
+    const next = await jsonp('https://wapi.kuwo.cn/api/www/artist/artistMusic?artistid=' + artistid +
+      '&pn=' + pn + '&rn=' + KUWO_PAGE_SIZE);
+    if (next.code !== 200 || !next.data) break;
+    list = list.concat(next.data.list || []);
+  }
+  return {
+    name: (list[0] && list[0].artist) || '酷我歌手',
+    tracks: list.map(s => ({
+      title: (s.name || '').trim(),
+      artist: (s.artist || '').trim(),
+      album: (s.album || '').trim()
+    }))
+  };
+}
+
+// 酷我单曲
+async function fetchKuwoSong(mid) {
+  const r = await jsonp('https://wapi.kuwo.cn/api/www/music/musicInfo?mid=' + mid);
+  if (r.code !== 200 || !r.data || !r.data.name) throw new Error('单曲不存在或已下架');
+  return {
+    name: r.data.name,
+    tracks: [{
+      title: (r.data.name || '').trim(),
+      artist: (r.data.artist || '').trim(),
+      album: (r.data.album || '').trim()
+    }]
+  };
+}
+
+// QQ歌单(含榜单):一次可拉全(实测 500 以内一次返回)
+async function fetchQqPlaylist(disstid) {
+  const data = await qqMusicu('music.srfDissInfo.aiDissInfo', 'uniform_get_Dissinfo', {
+    disstid: parseInt(disstid, 10),
+    song_begin: 0,
+    song_num: 2000,
+    onlysonglist: 0
+  });
+  const dirinfo = data.dirinfo || {};
+  const songlist = data.songlist || [];
+  if (!songlist.length && !dirinfo.title) throw new Error('歌单不存在或已删除');
+  return {
+    name: dirinfo.title || 'QQ歌单',
+    tracks: songlist.map(s => ({
+      title: (s.name || s.songname || '').trim(),
+      artist: (s.singer || []).map(x => x.name).join(' / ').trim(),
+      album: ((s.album && s.album.name) || s.albumname || '').trim()
+    }))
+  };
+}
+
+// QQ歌手页:分页拉全(单页上限 100)
+async function fetchQqArtist(singerMid, onProgress) {
+  const fetchPage = (begin) => qqMusicu('musichall.song_list_server', 'GetSingerSongList', {
+    singerMid, order: 1, begin, num: QQ_SINGER_PAGE_SIZE
+  });
+  const first = await fetchPage(0);
+  const total = first.totalNum || 0;
+  let all = first.songList || [];
+  const pages = Math.ceil(total / QQ_SINGER_PAGE_SIZE);
+  for (let p = 1; p < pages; p++) {
+    onProgress && onProgress('正在拉取第 ' + (p + 1) + '/' + pages + ' 页…');
+    const next = await fetchPage(p * QQ_SINGER_PAGE_SIZE);
+    if (!next.songList || !next.songList.length) break;
+    all = all.concat(next.songList);
+  }
+  const sample = (all[0] && all[0].songInfo && all[0].songInfo.singer) || [];
+  return {
+    name: sample.length ? sample[0].name : 'QQ歌手',
+    tracks: all.map(item => {
+      const s = item.songInfo || item;
+      return {
+        title: (s.name || s.songname || '').trim(),
+        artist: (s.singer || []).map(x => x.name).join(' / ').trim(),
+        album: ((s.album && s.album.name) || s.albumname || '').trim()
+      };
+    })
+  };
+}
+
+// QQ单曲
+async function fetchQqSong(songMid) {
+  const data = await qqMusicu('music.pf_song_detail_svr', 'get_song_detail_yqq', {
+    song_mid: songMid
+  });
+  const t = data.track_info || {};
+  if (!t.name) throw new Error('单曲不存在或已下架');
+  return {
+    name: t.name,
+    tracks: [{
+      title: (t.name || '').trim(),
+      artist: (t.singer || []).map(x => x.name).join(' / ').trim(),
+      album: ((t.album && t.album.name) || '').trim()
+    }]
+  };
+}
+
+const PLATFORM_NAMES = { kuwo: '酷我', qq: 'QQ音乐' };
+const TYPE_NAMES = { playlist: '歌单', artist: '歌手页', song: '单曲' };
+
+async function importFromLink(linkInput, onProgress) {
+  const parsed = parseMusicLink(linkInput);
+  if (!parsed) {
+    throw new Error('无法识别这个链接。目前支持酷我和 QQ音乐的歌单 / 歌手页 / 单曲链接。');
+  }
+  if (parsed.platform === 'unknown') {
+    throw new Error('只看到一个数字 ID,分不清是哪个平台。请贴完整链接(如 https://www.kuwo.cn/playlist_detail/' + parsed.id + ')。');
+  }
+  onProgress && onProgress('正在连接' + PLATFORM_NAMES[parsed.platform] + '…');
+  let result;
+  if (parsed.platform === 'kuwo') {
+    if (parsed.type === 'playlist') result = await fetchKuwoPlaylist(parsed.id, onProgress);
+    else if (parsed.type === 'artist') result = await fetchKuwoArtist(parsed.id, onProgress);
+    else result = await fetchKuwoSong(parsed.id);
+  } else {
+    if (parsed.type === 'playlist') result = await fetchQqPlaylist(parsed.id);
+    else if (parsed.type === 'artist') result = await fetchQqArtist(parsed.id, onProgress);
+    else result = await fetchQqSong(parsed.id);
+  }
+  const valid = result.tracks.filter(t => t.title && t.artist);
+  if (valid.length === 0) {
+    throw new Error('「' + result.name + '」里没有拿到可用的歌曲信息');
+  }
+  return {
+    sourceLabel: PLATFORM_NAMES[parsed.platform] + TYPE_NAMES[parsed.type] + '「' + result.name + '」',
+    tracks: valid
+  };
+}
+
+// =====================================================================
 // UI 逻辑
 // =====================================================================
 const PREVIEW_CAP = 300;
@@ -733,6 +1010,86 @@ el('folderInput').addEventListener('change', async (e) => {
   await runScan(files);
 });
 
+// 链接导入
+el('importLinkBtn').addEventListener('click', () => {
+  const link = el('linkInput').value;
+  if (!link.trim()) {
+    showLinkError('请先粘贴一个酷我或 QQ音乐链接');
+    return;
+  }
+  runLinkImport(link);
+});
+
+el('linkInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const link = el('linkInput').value;
+    if (link.trim()) runLinkImport(link);
+  }
+});
+
+el('linkInput').addEventListener('input', () => {
+  hideLinkError();
+});
+
+function showLinkError(msg) {
+  const box = el('linkError');
+  box.textContent = msg;
+  box.style.display = 'block';
+}
+function hideLinkError() {
+  el('linkError').style.display = 'none';
+}
+
+async function runLinkImport(link) {
+  hideLinkError();
+  const btn = el('importLinkBtn');
+  btn.disabled = true;
+  btn.textContent = '导入中…';
+  try {
+    const { sourceLabel, tracks } = await importFromLink(link, (msg) => {
+      btn.textContent = msg;
+    });
+    mergeIntoResults(tracks, sourceLabel);
+    el('linkInput').value = '';
+  } catch (err) {
+    showLinkError(err.message || '导入失败,请检查链接是否正确');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '导入链接';
+  }
+}
+
+// 把一批曲目合并进全局结果(去重),用于本地扫描与链接导入混合累积
+function mergeIntoResults(tracks, sourceLabel) {
+  if (!lastResults) {
+    lastResults = { success: [], skippedTags: [], skippedParse: [], sources: [] };
+  }
+  if (!lastResults.sources) lastResults.sources = [];
+  const seen = new Set(lastResults.success.map(t =>
+    (t.artist || '').toLowerCase() + '|' + (t.title || '').toLowerCase()));
+  let added = 0;
+  for (const t of tracks) {
+    const key = (t.artist || '').toLowerCase() + '|' + (t.title || '').toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      lastResults.success.push({ title: t.title, artist: t.artist, album: t.album || '' });
+      added++;
+    }
+  }
+  if (sourceLabel) lastResults.sources.push(sourceLabel);
+  lastResults.sources = [...new Set(lastResults.sources)];
+  renderResults(lastResults);
+  el('progressSection').style.display = 'none';
+  el('resultsSection').style.display = 'block';
+}
+
+el('clearAllBtn').addEventListener('click', () => {
+  lastResults = null;
+  el('resultsSection').style.display = 'none';
+  el('pickFolderBtn').textContent = '选择音乐文件夹';
+});
+
 // 展开/收起结果分组
 document.querySelectorAll('.result-header').forEach(header => {
   header.addEventListener('click', () => {
@@ -751,10 +1108,10 @@ async function runScan(fileList) {
   const targetFiles = fileList.filter(f => PARSERS[getExt(f.name)]);
   const total = targetFiles.length;
 
-  const seen = new Set();
-  const success = [];
-  const skippedTags = [];
-  const skippedParse = [];
+  lastResults = lastResults || { success: [], skippedTags: [], skippedParse: [], sources: [] };
+  if (!lastResults.sources) lastResults.sources = [];
+  const seen = new Set(lastResults.success.map(t =>
+    (t.artist || '').toLowerCase() + '|' + (t.title || '').toLowerCase()));
 
   for (let i = 0; i < targetFiles.length; i++) {
     const file = targetFiles[i];
@@ -771,13 +1128,13 @@ async function runScan(fileList) {
         const key = tags.artist.trim().toLowerCase() + '|' + tags.title.trim().toLowerCase();
         if (!seen.has(key)) {
           seen.add(key);
-          success.push({ title: tags.title.trim(), artist: tags.artist.trim(), album: (tags.album || '').trim() });
+          lastResults.success.push({ title: tags.title.trim(), artist: tags.artist.trim(), album: (tags.album || '').trim() });
         }
       } else {
-        skippedTags.push(relPath(file));
+        lastResults.skippedTags.push(relPath(file));
       }
     } catch (err) {
-      skippedParse.push(relPath(file));
+      lastResults.skippedParse.push(relPath(file));
     }
 
     if (i % 15 === 0) {
@@ -785,7 +1142,9 @@ async function runScan(fileList) {
     }
   }
 
-  lastResults = { success, skippedTags, skippedParse };
+  if (!lastResults.sources.includes('本地文件夹')) {
+    lastResults.sources.push('本地文件夹');
+  }
   renderResults(lastResults);
 
   el('progressSection').style.display = 'none';
@@ -795,10 +1154,13 @@ async function runScan(fileList) {
 }
 
 function renderResults(r) {
+  const srcText = (r.sources && r.sources.length)
+    ? '来源:' + r.sources.join(' + ') + '。'
+    : '';
   el('summaryLine').innerHTML =
-    `识别到 <b>${r.success.length}</b> 首曲目,` +
+    `已收集 <b>${r.success.length}</b> 首曲目,` +
     `<b>${r.skippedTags.length}</b> 个文件因标签缺失跳过,` +
-    `<b>${r.skippedParse.length}</b> 个文件解析失败。`;
+    `<b>${r.skippedParse.length}</b> 个文件解析失败。` + srcText;
 
   el('countSuccess').textContent = r.success.length;
   el('countTagsSkipped').textContent = r.skippedTags.length;
